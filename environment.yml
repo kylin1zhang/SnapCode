@@ -1,0 +1,15 @@
+name: snapcode
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pyqt>=6.4.0
+  - tesseract
+  - pytesseract>=0.3.10
+  - pillow>=9.3.0
+  - python-magic>=0.4.27
+  - black>=22.3.0
+  - pylint>=2.15.0
+  - pytest>=7.3.1
+  - pytest-qt>=4.2.0 

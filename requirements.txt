@@ -1,0 +1,17 @@
+# UI
+PyQt6>=6.4.0
+
+# OCR
+pytesseract>=0.3.10
+Pillow>=9.3.0
+
+# 文件处理
+python-magic>=0.4.27
+
+# 代码处理
+black>=22.3.0
+pylint>=2.15.0
+
+# 测试
+pytest>=7.3.1
+pytest-qt>=4.2.0 
