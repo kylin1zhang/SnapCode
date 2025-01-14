@@ -126,14 +126,36 @@ class MainWindow(QMainWindow):
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 background-color: #fff;
-                padding: 5px;
+                padding: 10px;
+                font-family: Consolas, Monaco, "Courier New", monospace;
+                font-size: 13px;
+                line-height: 1.5;
             }
         """)
         preview_layout = QVBoxLayout(preview_section)
-        preview_layout.addWidget(QLabel("代码预览"))
+        
+        # 添加标题
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        preview_label = QLabel("代码预览")
+        preview_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        
+        header_layout.addWidget(preview_label)
+        header_layout.addStretch()
+        
+        preview_layout.addWidget(header_widget)
+        
+        # 代码编辑器
         self.code_preview = QTextEdit()
-        self.code_preview.setReadOnly(True)
-        self.code_preview.setMinimumHeight(400)  # 设置最小高度
+        # self.code_preview.setReadOnly(True)  # 移除这一行
+        self.code_preview.setMinimumHeight(400)
+        self.code_preview.setPlaceholderText("识别的代码将显示在这里，您可以直接编辑...")
+        
+        # 添加行号显示（可选）
+        self.code_preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)  # 禁用自动换行
+        
         preview_layout.addWidget(self.code_preview)
         right_layout.addWidget(preview_section, stretch=4)  # 设置更大的拉伸因子
         
@@ -338,10 +360,11 @@ class MainWindow(QMainWindow):
 
     def save_code(self):
         """保存代码按钮点击事件"""
-        if not self.code_preview.toPlainText():
+        code = self.code_preview.toPlainText()
+        if not code:
+            self.statusBar().showMessage("没有可保存的代码", 3000)
             return
         
-        code = self.code_preview.toPlainText()
         custom_filename = self.filename_edit.text().strip()
         
         # 获取第一个图片文件的路径作为参考
@@ -349,6 +372,12 @@ class MainWindow(QMainWindow):
         
         from src.core.file_manager import FileManager
         file_manager = FileManager()
+        
+        # 如果文件名没有扩展名，使用检测到的语言添加扩展名
+        if custom_filename and '.' not in custom_filename:
+            code_info = file_manager.detect_code_info(code)
+            extension = file_manager.language_extensions.get(code_info['language'], '.txt')
+            custom_filename += extension
         
         success, message = file_manager.save_code(
             code=code,
