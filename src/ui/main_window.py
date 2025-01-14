@@ -57,7 +57,7 @@ class DropArea(QWidget):
         self.files_dropped.emit(file_paths)
     
     def mousePressEvent(self, event):
-        """鼠标点击事件"""
+        """鼠标点击事件 - 选择单个或多个文件"""
         self.clicked.emit()
 
 class MainWindow(QMainWindow):
@@ -84,8 +84,8 @@ class MainWindow(QMainWindow):
         
         # 拖拽区域
         self.drop_area = DropArea(self)
-        self.drop_area.files_dropped.connect(self.handle_dropped_files)  # 连接信号
-        self.drop_area.clicked.connect(self.import_files)  # 连接点击信号
+        self.drop_area.files_dropped.connect(self.handle_dropped_files)
+        self.drop_area.clicked.connect(self.select_files)  # 改为 select_files
         left_layout.addWidget(self.drop_area)
         
         # 文件列表
@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
         # 按钮区域
         button_layout = QHBoxLayout()
         self.import_btn = QPushButton("导入文件夹")
-        self.import_btn.clicked.connect(self.import_files)
+        self.import_btn.clicked.connect(self.import_folder)  # 改为 import_folder
         self.process_btn = QPushButton("开始处理")
         self.process_btn.clicked.connect(self.process_files)
         self.process_btn.setEnabled(False)
@@ -224,7 +224,18 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    def import_files(self):
+    def select_files(self):
+        """点击拖拽区域时的文件选择事件"""
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "选择图片文件",
+            "",
+            "图片文件 (*.png *.jpg *.jpeg)"
+        )
+        if files:
+            self.handle_dropped_files(files)
+
+    def import_folder(self):
         """导入文件夹按钮点击事件"""
         folder_path = QFileDialog.getExistingDirectory(
             self,
