@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QLineEdit
 )
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 from pathlib import Path
 
 class DropArea(QWidget):
@@ -67,6 +67,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SnapCode - 代码图片识别工具")
         self.setMinimumSize(1000, 700)
+        
+        # 设置应用图标
+        icon_path = Path(__file__).parent.parent.parent / 'resources' / 'icon.png'
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # 初始化文件路径列表
         self.file_paths = []
@@ -316,17 +321,14 @@ class MainWindow(QMainWindow):
                 progress_callback=self.update_progress
             )
             
-            # 合并所有识别出的代码
+            # 合并所有识别出的代码（只保留代码内容）
             all_code = []
             for result in results:
                 if result['success']:
-                    all_code.append(f"# 文件: {Path(result['path']).name}")
-                    if result['language']:
-                        all_code.append(f"# 语言: {result['language']}")
+                    # 只添加代码文本，不添加文件名和语言信息
                     all_code.append(result['text'])
-                    all_code.append("\n" + "="*50 + "\n")
             
-            # 合并代码
+            # 合并代码（不添加分隔符）
             merged_code = '\n'.join(all_code)
             
             # 显示在预览区域
