@@ -22,7 +22,8 @@ class FileManager:
             'java': '.java',
             'csharp': '.cs',
             'cpp': '.cpp',
-            'javascript': '.js'
+            'javascript': '.js',
+            'sql': '.sql'
         }
         
         # 类名匹配模式
@@ -30,7 +31,8 @@ class FileManager:
             'java': r'public\s+class\s+(\w+)',
             'csharp': r'(?:public\s+)?class\s+(\w+)',
             'python': r'class\s+(\w+)',
-            'cpp': r'class\s+(\w+)'
+            'cpp': r'class\s+(\w+)',
+            'sql': r'CREATE\s+(?:TABLE|PROCEDURE|TRIGGER|VIEW)\s+(\w+)'  # 添加SQL对象名称匹配
         }
     
     def import_files(self, file_paths: List[str]) -> List[str]:
@@ -99,6 +101,25 @@ class FileManager:
                     'import java'
                 ],
                 'weight': 1
+            },
+            'sql': {
+                'keywords': [
+                    'SELECT ',
+                    'INSERT INTO',
+                    'UPDATE ',
+                    'DELETE FROM',
+                    'CREATE TABLE',
+                    'ALTER TABLE',
+                    'EXEC ',
+                    'EXECUTE ',
+                    'DECLARE @',
+                    'BEGIN TRANSACTION',
+                    'MERGE INTO',
+                    'WITH ',
+                    'UNION ',
+                    'JOIN '
+                ],
+                'weight': 1.5  # SQL关键词很独特，给更高权重
             }
         }
         

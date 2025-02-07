@@ -30,7 +30,7 @@ SnapCode is an intelligent code image recognition tool that quickly converts cod
 ## Usage
 
 ### Option 1: Direct Execution (No Installation)
-1. Download `SnapCode.exe`
+1. Download the latest version of `SnapCode.exe` from the `dist` folder
 2. Double-click to run the program
 3. Drag & drop code images or click to select files
 4. Edit and save after recognition is complete

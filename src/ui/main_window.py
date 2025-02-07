@@ -10,11 +10,14 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QListWidget,
     QFrame,
-    QLineEdit
+    QLineEdit,
+    QApplication
 )
-from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PyQt6.QtCore import Qt, QMimeData, pyqtSignal, QTimer
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QImage, QShortcut
 from pathlib import Path
+import tempfile
+import os
 
 class DropArea(QWidget):
     """自定义拖拽区域"""
@@ -31,7 +34,7 @@ class DropArea(QWidget):
         layout = QVBoxLayout(self)
         
         # 提示标签
-        self.label = QLabel("拖拽图片文件到这里\n或者点击选择文件")
+        self.label = QLabel("拖拽图片文件到这里\n或者点击选择文件\n或按Ctrl+V粘贴图片")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.label)
         
@@ -90,8 +93,12 @@ class MainWindow(QMainWindow):
         # 拖拽区域
         self.drop_area = DropArea(self)
         self.drop_area.files_dropped.connect(self.handle_dropped_files)
-        self.drop_area.clicked.connect(self.select_files)  # 改为 select_files
+        self.drop_area.clicked.connect(self.select_files)
         left_layout.addWidget(self.drop_area)
+        
+        # 添加剪贴板快捷键
+        self.paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
+        self.paste_shortcut.activated.connect(self.handle_paste)
         
         # 文件列表
         self.file_list = QListWidget()
@@ -101,7 +108,7 @@ class MainWindow(QMainWindow):
         # 按钮区域
         button_layout = QHBoxLayout()
         self.import_btn = QPushButton("导入文件夹")
-        self.import_btn.clicked.connect(self.import_folder)  # 改为 import_folder
+        self.import_btn.clicked.connect(self.import_folder)
         self.process_btn = QPushButton("开始处理")
         self.process_btn.clicked.connect(self.process_files)
         self.process_btn.setEnabled(False)
@@ -147,14 +154,31 @@ class MainWindow(QMainWindow):
         preview_label = QLabel("代码预览")
         preview_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         
+        # 添加复制按钮
+        self.copy_btn = QPushButton("复制代码")
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
+        self.copy_btn.clicked.connect(self.copy_code)
+        
         header_layout.addWidget(preview_label)
         header_layout.addStretch()
+        header_layout.addWidget(self.copy_btn)
         
         preview_layout.addWidget(header_widget)
         
         # 代码编辑器
         self.code_preview = QTextEdit()
-        # self.code_preview.setReadOnly(True)  # 移除这一行
         self.code_preview.setMinimumHeight(400)
         self.code_preview.setPlaceholderText("识别的代码将显示在这里，您可以直接编辑...")
         
@@ -391,3 +415,51 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"代码已保存到: {message}", 3000)
         else:
             self.statusBar().showMessage(f"保存失败: {message}", 3000)
+
+    def handle_paste(self):
+        """处理剪贴板粘贴事件"""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        if mime_data.hasImage():
+            # 从剪贴板获取图片
+            image = QImage(clipboard.image())
+            
+            # 创建临时文件保存图片
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, 'clipboard_image.png')
+            
+            # 保存图片
+            if image.save(temp_path, 'PNG'):
+                self.statusBar().showMessage("已从剪贴板获取图片")
+                # 处理图片
+                self.handle_dropped_files([temp_path])
+            else:
+                self.statusBar().showMessage("从剪贴板获取图片失败", 3000)
+        else:
+            self.statusBar().showMessage("剪贴板中没有图片", 3000)
+
+    def copy_code(self):
+        """复制代码到剪贴板"""
+        code = self.code_preview.toPlainText()
+        if code:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(code)
+            self.statusBar().showMessage("代码已复制到剪贴板", 3000)
+            
+            # 添加视觉反馈
+            original_style = self.copy_btn.styleSheet()
+            self.copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #218838;
+                    color: white;
+                    border: none;
+                    padding: 5px 10px;
+                    border-radius: 3px;
+                    font-size: 12px;
+                }
+            """)
+            # 1秒后恢复原样式
+            QTimer.singleShot(1000, lambda: self.copy_btn.setStyleSheet(original_style))
+        else:
+            self.statusBar().showMessage("没有可复制的代码", 3000)
