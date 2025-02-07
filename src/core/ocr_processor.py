@@ -42,6 +42,26 @@ class OCRProcessor:
                     r'public\s+(?:static\s+)?(?:void|String|int|boolean)\s+\w+\s*\('
                 ],
                 'file_ext': '.java'
+            },
+            'sql': {
+                'keywords': [
+                    'SELECT', 'FROM', 'WHERE', 'INSERT', 'UPDATE', 'DELETE', 
+                    'JOIN', 'GROUP BY', 'ORDER BY', 'HAVING', 'CREATE TABLE',
+                    'ALTER TABLE', 'DROP TABLE', 'EXEC', 'EXECUTE', 'PROCEDURE',
+                    'DECLARE', 'SET', 'BEGIN', 'END', 'TRIGGER', 'VIEW'
+                ],
+                'patterns': [
+                    r'SELECT\s+[\w\s,\*]+\s+FROM',
+                    r'INSERT\s+INTO\s+\w+',
+                    r'UPDATE\s+\w+\s+SET',
+                    r'CREATE\s+(?:TABLE|PROCEDURE|TRIGGER|VIEW|INDEX)',
+                    r'ALTER\s+TABLE\s+\w+',
+                    r'EXEC(?:UTE)?\s+\w+',
+                    r'BEGIN\s+TRANSACTION',
+                    r'DECLARE\s+@\w+',
+                ],
+                'file_ext': '.sql',
+                'weight': 1.5  # 给SQL更高的权重，因为其关键词比较独特
             }
         }
         
