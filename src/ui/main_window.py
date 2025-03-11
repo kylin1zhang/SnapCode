@@ -253,6 +253,9 @@ class MainWindow(QMainWindow):
         # 添加左右面板到主布局
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 2)
+        
+        # 添加一个标志来标识当前图片是否来自剪贴板
+        self.is_from_clipboard = False
     
     def handle_dropped_files(self, file_paths: list):
         """处理拖拽的文件"""
@@ -266,6 +269,9 @@ class MainWindow(QMainWindow):
             self.file_paths = valid_files
             self.file_list.clear()
             self.file_list.addItems([Path(path).name for path in self.file_paths])
+            
+            # 设置来源标志
+            self.is_from_clipboard = False
             
             # 启用处理按钮
             self.process_btn.setEnabled(len(self.file_paths) > 0)
@@ -384,38 +390,6 @@ class MainWindow(QMainWindow):
         """更新进度条"""
         self.progress_bar.setValue(value)
 
-    def save_code(self):
-        """保存代码按钮点击事件"""
-        code = self.code_preview.toPlainText()
-        if not code:
-            self.statusBar().showMessage("没有可保存的代码", 3000)
-            return
-        
-        custom_filename = self.filename_edit.text().strip()
-        
-        # 获取第一个图片文件的路径作为参考
-        original_path = self.file_paths[0] if self.file_paths else None
-        
-        from src.core.file_manager import FileManager
-        file_manager = FileManager()
-        
-        # 如果文件名没有扩展名，使用检测到的语言添加扩展名
-        if custom_filename and '.' not in custom_filename:
-            code_info = file_manager.detect_code_info(code)
-            extension = file_manager.language_extensions.get(code_info['language'], '.txt')
-            custom_filename += extension
-        
-        success, message = file_manager.save_code(
-            code=code,
-            original_path=original_path,
-            custom_filename=custom_filename
-        )
-        
-        if success:
-            self.statusBar().showMessage(f"代码已保存到: {message}", 3000)
-        else:
-            self.statusBar().showMessage(f"保存失败: {message}", 3000)
-
     def handle_paste(self):
         """处理剪贴板粘贴事件"""
         clipboard = QApplication.clipboard()
@@ -425,19 +399,95 @@ class MainWindow(QMainWindow):
             # 从剪贴板获取图片
             image = QImage(clipboard.image())
             
-            # 创建临时文件保存图片
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, 'clipboard_image.png')
+            # 让用户选择保存位置
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "保存粘贴的图片",
+                str(Path.home() / "Downloads" / "clipboard_image.png"),  # 默认保存到下载文件夹
+                "PNG图片 (*.png)"
+            )
             
-            # 保存图片
-            if image.save(temp_path, 'PNG'):
-                self.statusBar().showMessage("已从剪贴板获取图片")
-                # 处理图片
-                self.handle_dropped_files([temp_path])
+            if file_path:
+                # 确保文件扩展名为.png
+                if not file_path.lower().endswith('.png'):
+                    file_path += '.png'
+                
+                # 保存图片
+                if image.save(file_path, 'PNG'):
+                    self.statusBar().showMessage("已保存粘贴的图片")
+                    # 设置来源标志
+                    self.is_from_clipboard = True
+                    # 处理图片
+                    self.handle_dropped_files([file_path])
+                else:
+                    self.statusBar().showMessage("保存粘贴的图片失败", 3000)
             else:
-                self.statusBar().showMessage("从剪贴板获取图片失败", 3000)
+                self.statusBar().showMessage("已取消保存", 3000)
         else:
             self.statusBar().showMessage("剪贴板中没有图片", 3000)
+
+    def save_code(self):
+        """保存代码按钮点击事件"""
+        code = self.code_preview.toPlainText()
+        if not code:
+            self.statusBar().showMessage("没有可保存的代码", 3000)
+            return
+        
+        # 获取建议的文件名和路径
+        from src.core.file_manager import FileManager
+        file_manager = FileManager()
+        
+        # 检测代码信息以获取合适的文件扩展名
+        code_info = file_manager.detect_code_info(code)
+        extension = file_manager.language_extensions.get(code_info['language'], '.txt')
+        
+        # 使用当前文件名作为默认名称（如果有的话）
+        suggested_name = self.filename_edit.text().strip()
+        if not suggested_name:
+            # 如果没有自定义文件名，使用智能生成的文件名
+            if self.file_paths:
+                suggested_name = Path(file_manager.generate_smart_filename(code, self.file_paths[0])).name
+            else:
+                suggested_name = f"code{extension}"
+        
+        # 确保文件名有正确的扩展名
+        if not suggested_name.endswith(extension):
+            suggested_name = suggested_name.split('.')[0] + extension
+        
+        # 确定默认保存路径
+        if self.is_from_clipboard:
+            # 如果是剪贴板图片，默认保存到下载文件夹
+            default_save_path = str(Path.home() / "Downloads" / suggested_name)
+        else:
+            # 如果是拖拽或选择的文件，默认保存到原图片所在文件夹
+            if self.file_paths:
+                default_save_path = str(Path(self.file_paths[0]).parent / suggested_name)
+            else:
+                default_save_path = str(Path.home() / "Downloads" / suggested_name)
+        
+        # 打开文件保存对话框
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存代码文件",
+            default_save_path,  # 使用确定的默认保存路径
+            f"代码文件 (*{extension});;所有文件 (*.*)"
+        )
+        
+        if file_path:
+            try:
+                # 确保目标目录存在
+                save_dir = Path(file_path).parent
+                save_dir.mkdir(parents=True, exist_ok=True)
+                
+                # 保存文件
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(code)
+                
+                self.statusBar().showMessage(f"代码已保存到: {file_path}", 3000)
+            except Exception as e:
+                self.statusBar().showMessage(f"保存失败: {str(e)}", 3000)
+        else:
+            self.statusBar().showMessage("已取消保存", 3000)
 
     def copy_code(self):
         """复制代码到剪贴板"""
