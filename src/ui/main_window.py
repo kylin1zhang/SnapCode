@@ -287,7 +287,7 @@ class MainWindow(QMainWindow):
             self,
             "选择图片文件",
             "",
-            "图片文件 (*.png *.jpg *.jpeg)"
+            "图片文件 (*.png *.jpg *.jpeg);;XML文件 (*.xml);;所有文件 (*.*)"
         )
         if files:
             self.handle_dropped_files(files)
@@ -303,9 +303,9 @@ class MainWindow(QMainWindow):
         
         if folder_path:
             try:
-                # 获取文件夹中的所有图片文件
+                # 获取文件夹中的所有图片文件和XML文件
                 image_files = []
-                for ext in ['*.png', '*.jpg', '*.jpeg']:
+                for ext in ['*.png', '*.jpg', '*.jpeg', '*.xml']:  # 添加XML扩展名
                     image_files.extend(Path(folder_path).glob(ext))
                 
                 # 按文件名自然排序
@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
                 if file_paths:
                     self.handle_dropped_files(file_paths)
                 else:
-                    self.statusBar().showMessage("所选文件夹中没有找到图片文件", 3000)
+                    self.statusBar().showMessage("所选文件夹中没有找到支持的文件", 3000)
                     
             except Exception as e:
                 self.statusBar().showMessage(f"导入文件夹失败: {str(e)}", 3000)

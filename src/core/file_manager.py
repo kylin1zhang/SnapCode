@@ -23,7 +23,8 @@ class FileManager:
             'csharp': '.cs',
             'cpp': '.cpp',
             'javascript': '.js',
-            'sql': '.sql'
+            'sql': '.sql',
+            'xml': '.xml'  # 添加XML扩展名
         }
         
         # 类名匹配模式
@@ -32,7 +33,8 @@ class FileManager:
             'csharp': r'(?:public\s+)?class\s+(\w+)',
             'python': r'class\s+(\w+)',
             'cpp': r'class\s+(\w+)',
-            'sql': r'CREATE\s+(?:TABLE|PROCEDURE|TRIGGER|VIEW)\s+(\w+)'  # 添加SQL对象名称匹配
+            'sql': r'CREATE\s+(?:TABLE|PROCEDURE|TRIGGER|VIEW)\s+(\w+)',
+            'xml': r'<([a-zA-Z0-9_-]+)[^>]*>.*?</\1>'  # 添加XML根元素匹配
         }
     
     def import_files(self, file_paths: List[str]) -> List[str]:
@@ -85,11 +87,11 @@ class FileManager:
                     'private static',
                     'string[]',
                     'void',
-                    'EAP.Devhub',  # 特定项目的特征
+                    'EAP.Devhub',
                     '.CTC',
                     'AutoMapper'
                 ],
-                'weight': 1.2  # 给C#更高的权重
+                'weight': 1.2
             },
             'java': {
                 'keywords': [
@@ -119,7 +121,23 @@ class FileManager:
                     'UNION ',
                     'JOIN '
                 ],
-                'weight': 1.5  # SQL关键词很独特，给更高权重
+                'weight': 1.5
+            },
+            'xml': {
+                'keywords': [
+                    '<?xml',
+                    '</',
+                    '/>',
+                    'xmlns:',
+                    'encoding=',
+                    '<root>',
+                    '</root>',
+                    '<config',
+                    '<project',
+                    '<properties',
+                    '<dependencies'
+                ],
+                'weight': 2.0  # XML的特征很明显，给更高的权重
             }
         }
         
