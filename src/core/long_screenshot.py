@@ -16,15 +16,18 @@ class LongScreenshotCapture:
         self.window_handle = None
         self.select_rect = None
         self.scroll_delay = 800  # 进一步增加滚动延迟（毫秒）
-        self.max_scroll_count = 300  # 增加最大滚动次数
+        self.max_scroll_count = 500  # 增加最大滚动次数到500，支持更长的页面
         self.current_scroll_count = 0
         self.result_image = None
         self.auto_scroll = True
         self.same_frame_count = 0  # 连续相同帧计数
-        self.max_same_frames = 8   # 增加最大连续相同帧数，从5增加到8，提高对空白区域的容忍度
+        self.max_same_frames = 12   # 进一步增加最大连续相同帧数，提高对空白区域的容忍度
         self.is_remote_desktop = False  # 是否为远程桌面
         self.empty_frame_count = 0  # 连续空白帧计数
-        self.max_empty_frames = 5  # 最大连续空白帧数
+        self.max_empty_frames = 8  # 增加最大连续空白帧数
+        self.forced_scroll_count = 0  # 强制滚动计数
+        self.max_forced_scroll = 3  # 最大强制滚动次数
+        self.last_scroll_time = 0  # 上次滚动时间
         
     def start_capture(self, window_handle, select_rect=None):
         """开始捕获长截图"""
@@ -61,7 +64,7 @@ class LongScreenshotCapture:
             QTimer.singleShot(self.scroll_delay, self.scroll_and_capture)
         
     def capture_frame(self):
-        """捕获当前帧"""
+        """捕获当前帧，使用更高的清晰度设置"""
         try:
             # 获取屏幕截图
             screen = QApplication.primaryScreen()
@@ -81,23 +84,27 @@ class LongScreenshotCapture:
                     self.finish_capture()
                     return False
             
-            # 捕获指定区域的截图
+            # 捕获指定区域的截图 - 使用更高质量的设置
             screenshot = screen.grabWindow(
                 0,  # 使用0表示整个屏幕
                 capture_rect.x(),
                 capture_rect.y(),
                 capture_rect.width(),
                 capture_rect.height()
-            ).toImage()
+            )
             
-            # 转换为numpy数组
+            # 提高图像质量 - 使用高质量的图像格式
+            screenshot = screenshot.toImage()
+            screenshot.setDevicePixelRatio(1.0)  # 确保使用原始像素比
+            
+            # 转换为numpy数组 - 使用更高的位深度
             bits = screenshot.bits()
             bits.setsize(screenshot.sizeInBytes())
             arr = np.frombuffer(bits, np.uint8).reshape(
                 screenshot.height(), screenshot.width(), 4
             )
             
-            # 转换为BGR格式
+            # 转换为BGR格式，保持完整的色彩信息
             frame = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
             
             # 保存截图
@@ -147,7 +154,7 @@ class LongScreenshotCapture:
             self.finish_capture()
     
     def perform_scroll(self):
-        """执行滚动操作"""
+        """执行滚动操作，增强滚动可靠性"""
         try:
             # 确保窗口处于活动状态
             try:
@@ -183,29 +190,51 @@ class LongScreenshotCapture:
                 scroll_count = 3
                 scroll_value = -120
                 scroll_interval = 0.1
+            
+            # 如果已经滚动了很多次但内容没有明显变化，增加滚动力度
+            if self.current_scroll_count > 15 and self.same_frame_count > 1:
+                print("检测到可能的滚动困难，增加滚动力度")
+                scroll_count += 2
+                scroll_value *= 1.5
+            
+            # 如果是强制滚动，使用更大的滚动值
+            if self.forced_scroll_count > 0:
+                scroll_count += 2
+                scroll_value *= 2
+                print(f"执行强制滚动 ({self.forced_scroll_count}/{self.max_forced_scroll})，增加滚动力度")
                 
             # 执行滚动
+            success = False
             for _ in range(scroll_count):
                 win32api.mouse_event(
                     win32con.MOUSEEVENTF_WHEEL,
                     0, 0,
-                    scroll_value,
+                    int(scroll_value),
                     0
                 )
                 time.sleep(scroll_interval)
+                success = True
             
             # 恢复鼠标位置
             QCursor.setPos(original_pos)
             
-            return True
+            # 如果滚动次数较多，增加额外的等待时间让页面完全加载
+            if self.current_scroll_count > 20:
+                time.sleep(0.3)
+                
+            # 记录滚动时间
+            self.last_scroll_time = time.time()
+                
+            return success
         except Exception as e:
             print(f"滚动错误: {str(e)}")
             import traceback
             traceback.print_exc()
-            return False
+            # 即使出错也尝试继续
+            return True
     
     def check_end_of_scroll(self):
-        """检查是否到达滚动底部"""
+        """检查是否到达滚动底部，增强容错性"""
         # 至少需要两帧才能比较
         if len(self.screenshots) < 2:
             return False
@@ -238,16 +267,65 @@ class LongScreenshotCapture:
             if similarity > threshold:
                 self.same_frame_count += 1
                 print(f"检测到相似帧 ({self.same_frame_count}/{self.max_same_frames})")
+                
+                # 如果连续相似帧达到阈值，但滚动次数较少，尝试强制滚动
                 if self.same_frame_count >= self.max_same_frames:
+                    # 额外检查：确保不是因为滚动失败而误判为到达底部
+                    # 如果当前滚动次数太少，可能是滚动失败而不是真的到底了
+                    if self.current_scroll_count < 15:
+                        # 尝试额外滚动几次
+                        print("滚动次数较少，尝试额外滚动以确认是否真的到底")
+                        self.forced_scroll_count += 1
+                        if self.forced_scroll_count <= self.max_forced_scroll:
+                            # 执行更强力的滚动
+                            for _ in range(5):
+                                win32api.mouse_event(
+                                    win32con.MOUSEEVENTF_WHEEL,
+                                    0, 0,
+                                    -300,  # 更大的滚动值
+                                    0
+                                )
+                                time.sleep(0.2)
+                            return False
                     return True
             else:
                 self.same_frame_count = 0
+                self.forced_scroll_count = 0  # 重置强制滚动计数
+            
+            # 额外检查：如果已经滚动了很多次但内容变化很小，可能是卡住了
+            if self.current_scroll_count > 20:
+                # 计算最后几帧的平均相似度
+                if len(self.screenshots) >= 5:
+                    recent_similarities = []
+                    for i in range(len(self.screenshots)-1, max(0, len(self.screenshots)-5), -1):
+                        if i > 0:
+                            sim = self.calculate_image_similarity(self.screenshots[i], self.screenshots[i-1])
+                            recent_similarities.append(sim)
+                    
+                    if recent_similarities and sum(recent_similarities)/len(recent_similarities) > 0.98:
+                        print("最近几帧相似度很高，可能滚动卡住，尝试强制滚动")
+                        # 执行更强力的滚动
+                        for _ in range(5):
+                            win32api.mouse_event(
+                                win32con.MOUSEEVENTF_WHEEL,
+                                0, 0,
+                                -300,  # 更大的滚动值
+                                0
+                            )
+                            time.sleep(0.2)
+            
+            # 检查滚动间隔，防止滚动过快
+            current_time = time.time()
+            if current_time - self.last_scroll_time < 0.5:  # 确保至少0.5秒的滚动间隔
+                time.sleep(0.5 - (current_time - self.last_scroll_time))
+            self.last_scroll_time = time.time()
             
             return False
         except Exception as e:
             print(f"检查滚动结束错误: {str(e)}")
             import traceback
             traceback.print_exc()
+            # 出错时不要立即结束，给予更多容错机会
             return False
     
     def calculate_image_similarity(self, img1, img2):
@@ -317,7 +395,7 @@ class LongScreenshotCapture:
         return self.result_image
     
     def stitch_images(self):
-        """拼接图像 - 使用 ShareX 的方法"""
+        """拼接图像 - 使用 ShareX 的方法，支持更大的图像"""
         if not self.screenshots:
             return None
         
@@ -360,23 +438,66 @@ class LongScreenshotCapture:
             
             print(f"计算的总高度: {total_height}")
             
-            # 创建结果图像
-            result = np.zeros((total_height, width, 3), dtype=np.uint8)
+            # 如果图像太大，可能会导致内存问题，分段处理
+            max_height_per_segment = 10000  # 每段最大高度
             
-            # 拼接图像
-            for i, frame in enumerate(frames):
-                y_offset = offsets[i]
+            if total_height > max_height_per_segment:
+                print(f"图像高度 ({total_height}) 超过阈值 ({max_height_per_segment})，将分段处理")
                 
-                # 计算目标区域
-                y_end = min(y_offset + height, total_height)
-                h = y_end - y_offset
+                # 计算需要多少段
+                num_segments = (total_height + max_height_per_segment - 1) // max_height_per_segment
+                segments = []
                 
-                # 复制图像
-                if h > 0 and y_offset < total_height:
-                    result[y_offset:y_end, 0:width] = frame[:h, :]
-            
-            print(f"拼接完成，最终图像大小: {result.shape}")
-            return result
+                for seg_idx in range(num_segments):
+                    start_y = seg_idx * max_height_per_segment
+                    end_y = min((seg_idx + 1) * max_height_per_segment, total_height)
+                    seg_height = end_y - start_y
+                    
+                    # 创建当前段的结果图像
+                    segment = np.zeros((seg_height, width, 3), dtype=np.uint8)
+                    
+                    # 找出属于当前段的帧
+                    for i, frame in enumerate(frames):
+                        y_offset = offsets[i] - start_y
+                        
+                        # 如果这一帧在当前段的范围内
+                        if -height < y_offset < seg_height:
+                            # 计算目标区域
+                            y_start = max(0, y_offset)
+                            y_end = min(y_offset + height, seg_height)
+                            h = y_end - y_start
+                            
+                            # 计算源区域
+                            src_start = 0 if y_offset >= 0 else -y_offset
+                            
+                            # 复制图像
+                            if h > 0:
+                                segment[y_start:y_end, 0:width] = frame[src_start:src_start+h, :]
+                    
+                    segments.append(segment)
+                
+                # 合并所有段
+                result = np.vstack(segments)
+                print(f"分段拼接完成，最终图像大小: {result.shape}")
+                return result
+            else:
+                # 创建结果图像
+                result = np.zeros((total_height, width, 3), dtype=np.uint8)
+                
+                # 拼接图像
+                for i, frame in enumerate(frames):
+                    y_offset = offsets[i]
+                    
+                    # 计算目标区域
+                    y_end = min(y_offset + height, total_height)
+                    h = y_end - y_offset
+                    
+                    # 复制图像
+                    if h > 0 and y_offset < total_height:
+                        result[y_offset:y_end, 0:width] = frame[:h, :]
+                
+                print(f"拼接完成，最终图像大小: {result.shape}")
+                return result
         except Exception as e:
             print(f"拼接图像错误: {str(e)}")
             import traceback

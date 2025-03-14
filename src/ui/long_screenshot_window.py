@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer
-from PyQt6.QtGui import QPainter, QColor, QScreen, QCursor, QImage
+from PyQt6.QtGui import QPainter, QColor, QScreen, QCursor, QImage, QPen
 from PyQt6.QtWidgets import QWidget, QApplication, QMessageBox, QPushButton, QVBoxLayout, QLabel, QFileDialog
 from ..utils.win32_utils import get_window_under_cursor, simulate_scroll, bring_window_to_front
 from ..core.long_screenshot import LongScreenshotCapture
@@ -45,6 +45,39 @@ class TransparentWindow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
+        # 如果正在截图，只绘制选区边框
+        if self.is_capturing and hasattr(self, 'capture_rect'):
+            # 清除背景
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            
+            # 绘制选区边框 - 使用虚线框
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            pen = QPen()
+            pen.setColor(QColor(0, 255, 0))  # 绿色
+            pen.setWidth(2)  # 线宽
+            pen.setStyle(Qt.PenStyle.DashLine)  # 虚线样式
+            painter.setPen(pen)
+            painter.drawRect(self.capture_rect)
+            
+            # 绘制截图进度信息
+            if hasattr(self.capture, 'current_scroll_count'):
+                progress_text = f"截图进度: {self.capture.current_scroll_count}/{self.capture.max_scroll_count}"
+                font = painter.font()
+                font.setPointSize(10)
+                painter.setFont(font)
+                
+                # 设置文本颜色为白色，带黑色描边以增强可读性
+                text_rect = QRect(self.capture_rect.x(), self.capture_rect.y() - 25, 200, 20)
+                painter.setPen(QColor(0, 0, 0))
+                for dx in [-1, 1]:
+                    for dy in [-1, 1]:
+                        painter.drawText(text_rect.adjusted(dx, dy, dx, dy), Qt.AlignmentFlag.AlignLeft, progress_text)
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, progress_text)
+            
+            return
+        
         # 绘制半透明背景
         painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
         
@@ -54,10 +87,30 @@ class TransparentWindow(QWidget):
             # 绘制选区（清除遮罩）
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
             painter.fillRect(select_rect, Qt.GlobalColor.transparent)
-            # 绘制选区边框
+            
+            # 绘制选区边框 - 使用虚线框
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            painter.setPen(QColor(0, 255, 0))
+            pen = QPen()
+            pen.setColor(QColor(0, 255, 0))  # 绿色
+            pen.setWidth(2)  # 线宽
+            pen.setStyle(Qt.PenStyle.DashLine)  # 虚线样式
+            painter.setPen(pen)
             painter.drawRect(select_rect)
+            
+            # 绘制选区尺寸信息
+            size_text = f"{select_rect.width()} × {select_rect.height()}"
+            font = painter.font()
+            font.setPointSize(10)
+            painter.setFont(font)
+            
+            # 设置文本颜色为白色，带黑色描边以增强可读性
+            text_rect = QRect(select_rect.x(), select_rect.y() - 25, 150, 20)
+            painter.setPen(QColor(0, 0, 0))
+            for dx in [-1, 1]:
+                for dy in [-1, 1]:
+                    painter.drawText(text_rect.adjusted(dx, dy, dx, dy), Qt.AlignmentFlag.AlignLeft, size_text)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, size_text)
             
     def mousePressEvent(self, event):
         """鼠标按下时开始选择区域"""
@@ -101,8 +154,8 @@ class TransparentWindow(QWidget):
     def start_capture(self, select_rect):
         """开始长截图过程"""
         print("开始长截图过程")
-        # 隐藏选择窗口
-        self.hide()
+        # 保存选区信息，但不立即隐藏窗口
+        self.capture_rect = select_rect
         
         # 获取目标窗口
         try:
@@ -133,6 +186,10 @@ class TransparentWindow(QWidget):
             # 开始截图
             self.is_capturing = True
             
+            # 修改窗口样式，保持窗口可见但只显示选区边框
+            self.setWindowOpacity(0.3)  # 降低透明度
+            self.update()  # 刷新显示
+            
             # 使用全局坐标作为选区
             global_select_rect = QRect(
                 select_rect.x(),
@@ -147,8 +204,13 @@ class TransparentWindow(QWidget):
             self.capture.start_capture(target_window, global_select_rect)
             
             # 等待截图完成
-            timeout = 120  # 增加最大等待时间（秒）
+            timeout = 180  # 增加最大等待时间（秒）
             start_time = time.time()
+            
+            # 创建一个定时器来更新截图进度
+            self.progress_timer = QTimer(self)
+            self.progress_timer.timeout.connect(self.update_capture_progress)
+            self.progress_timer.start(500)  # 每500毫秒更新一次
             
             while self.capture.is_capturing:
                 QApplication.processEvents()
@@ -159,7 +221,13 @@ class TransparentWindow(QWidget):
                     print("截图超时")
                     self.capture.is_capturing = False
                     break
-                
+            
+            # 停止进度更新定时器
+            self.progress_timer.stop()
+            
+            # 隐藏窗口
+            self.hide()
+            
             # 获取结果并保存
             result = self.capture.result_image
             if result is not None and result.size > 0:
@@ -194,6 +262,12 @@ class TransparentWindow(QWidget):
         finally:
             # 确保恢复主窗口状态
             self.is_capturing = False
+            
+    def update_capture_progress(self):
+        """更新截图进度显示"""
+        if self.is_capturing and hasattr(self, 'capture_rect'):
+            # 更新窗口以显示最新的截图进度
+            self.update()
             
     def restore_parent_window(self):
         """恢复主窗口"""

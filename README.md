@@ -37,12 +37,22 @@ The new long screenshot feature allows you to:
 
 ### How to Use Long Screenshot
 
-1. Click the "Long Screenshot" button in the toolbar
-2. Position the transparent window over the target content
-3. Click "Start Capture" in the overlay window
-4. Wait for the automatic scrolling and capture process
-5. Choose where to save the resulting image
-6. Use the captured image with SnapCode's main features to convert to text
+1. **Using the System Tray**
+   - Single-click the SnapCode icon in the system tray to start long screenshot
+   - Double-click the system tray icon to open the main window
+   - Right-click the tray icon to see more options
+
+2. **Operation Steps**
+   - After starting the long screenshot, a transparent window appears
+   - Drag with your mouse to select the area to capture
+   - After releasing the mouse, the program automatically scrolls and captures content
+   - When capture is complete, choose where to save the image
+   - The saved long screenshot can be converted to text using SnapCode's main features
+
+3. **Suitable Scenarios**
+   - Capturing long documents or code files
+   - Complete screenshots of web pages
+   - Interfaces that require scrolling to see all content
 
 ## Usage
 
@@ -80,10 +90,13 @@ SnapCode/
     ├── core/          # Core modules
     │   ├── code_processor.py    # Code processing
     │   ├── file_manager.py      # File management
+    │   ├── long_screenshot.py   # Long screenshot feature
     │   └── ocr_processor.py     # OCR recognition
     ├── ui/            # UI related
+    │   ├── long_screenshot_window.py  # Long screenshot window
     │   └── main_window.py       # Main window
     └── utils/         # Utilities
+        ├── win32_utils.py       # Windows API utilities
         └── icon_generator.py    # Icon generation
 ```
 
@@ -93,16 +106,19 @@ SnapCode/
    - PyTesseract for OCR recognition
    - Feature-based programming language detection
    - Intelligent code formatting and correction
+   - Long screenshot auto-scrolling and image stitching
 
 2. UI Design
    - Modern interface based on PyQt6
    - Drag & drop support
    - Real-time preview functionality
+   - System tray integration
 
 3. Performance Optimization
    - Multi-file parallel processing
    - Smart caching mechanism
    - Memory usage optimization
+   - Special optimizations for remote desktop environments
 
 ## Notes
 
@@ -114,4 +130,5 @@ SnapCode/
 2. Usage Tips
    - Prefer light text on dark background
    - Ensure complete code sections
-   - Review special characters after recognition 
+   - Review special characters after recognition
+   - For long screenshots, select content area rather than entire window 
