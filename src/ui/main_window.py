@@ -11,7 +11,9 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QFrame,
     QLineEdit,
-    QApplication
+    QApplication,
+    QSystemTrayIcon,
+    QMenu
 )
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal, QTimer
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QImage, QShortcut
@@ -88,9 +90,6 @@ class MainWindow(QMainWindow):
                 border-bottom: 1px solid #dee2e6;
             }
         """)
-        
-        # 设置长截图按钮
-        self.setup_long_screenshot_button()
         
         # 初始化文件路径列表
         self.file_paths = []
@@ -276,27 +275,76 @@ class MainWindow(QMainWindow):
         # 添加长截图窗口
         self.long_screenshot_window = None
         
-    def setup_long_screenshot_button(self):
-        """设置长截图按钮"""
-        long_screenshot_button = QPushButton("长截图", self)
-        long_screenshot_button.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 5px 10px;
-                border-radius: 3px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        long_screenshot_button.clicked.connect(self.show_long_screenshot_window)
+        # 创建系统托盘图标
+        self.setup_system_tray()
         
-        # 将按钮添加到工具栏
-        self.toolbar.addWidget(long_screenshot_button)
+    def setup_system_tray(self):
+        """设置系统托盘图标"""
+        # 创建系统托盘图标
+        self.tray_icon = QSystemTrayIcon(self)
         
+        # 设置图标
+        icon_path = Path(__file__).parent.parent.parent / 'resources' / 'icon.png'
+        if icon_path.exists():
+            self.tray_icon.setIcon(QIcon(str(icon_path)))
+        
+        # 创建托盘菜单
+        tray_menu = QMenu()
+        
+        # 添加菜单项
+        long_screenshot_action = tray_menu.addAction("长截图")
+        long_screenshot_action.triggered.connect(self.show_long_screenshot_window)
+        
+        show_action = tray_menu.addAction("显示主窗口")
+        show_action.triggered.connect(self.show_main_window)
+        
+        tray_menu.addSeparator()
+        
+        exit_action = tray_menu.addAction("退出")
+        exit_action.triggered.connect(QApplication.quit)
+        
+        # 设置托盘菜单
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # 设置托盘图标点击事件
+        self.tray_icon.activated.connect(self.tray_icon_activated)
+        
+        # 显示托盘图标
+        self.tray_icon.show()
+        
+    def tray_icon_activated(self, reason):
+        """托盘图标被激活时的处理"""
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:  # 单击
+            # 单击直接进行长截图
+            self.show_long_screenshot_window()
+        elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:  # 双击
+            # 双击显示主窗口
+            self.show_main_window()
+    
+    def show_main_window(self):
+        """显示主窗口"""
+        self.show()
+        self.activateWindow()
+        self.raise_()
+    
+    def closeEvent(self, event):
+        """关闭窗口事件 - 最小化到托盘而不是退出"""
+        if self.tray_icon.isVisible():
+            # 显示提示消息
+            self.tray_icon.showMessage(
+                "SnapCode 已最小化到托盘",
+                "程序将继续在后台运行。单击托盘图标进行长截图，双击显示主窗口。",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            # 隐藏主窗口
+            self.hide()
+            # 忽略关闭事件
+            event.ignore()
+        else:
+            # 正常关闭
+            event.accept()
+            
     def show_long_screenshot_window(self):
         """显示长截图窗口"""
         if self.long_screenshot_window is None:
