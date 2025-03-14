@@ -5,6 +5,7 @@ __pycache__/
 
 # Distribution / packaging
 dist/
+!dist/SnapCode.exe
 *.egg-info/
 *.egg
 

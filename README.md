@@ -27,6 +27,23 @@ SnapCode is an intelligent code image recognition tool that quickly converts cod
    - Custom save path support
    - Batch file import/export
 
+## New Feature: Long Screenshot
+
+The new long screenshot feature allows you to:
+- Capture long scrolling content (like documentation or code files)
+- Use a transparent overlay window for precise positioning
+- Auto-scroll and stitch images seamlessly
+- Save the captured image to your preferred location
+
+### How to Use Long Screenshot
+
+1. Click the "Long Screenshot" button in the toolbar
+2. Position the transparent window over the target content
+3. Click "Start Capture" in the overlay window
+4. Wait for the automatic scrolling and capture process
+5. Choose where to save the resulting image
+6. Use the captured image with SnapCode's main features to convert to text
+
 ## Usage
 
 ### Option 1: Direct Execution (No Installation)

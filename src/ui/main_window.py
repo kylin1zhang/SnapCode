@@ -18,6 +18,7 @@ from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QImage
 from pathlib import Path
 import tempfile
 import os
+from .long_screenshot_window import TransparentWindow
 
 class DropArea(QWidget):
     """自定义拖拽区域"""
@@ -75,6 +76,21 @@ class MainWindow(QMainWindow):
         icon_path = Path(__file__).parent.parent.parent / 'resources' / 'icon.png'
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
+        
+        # 创建工具栏
+        self.toolbar = self.addToolBar("工具栏")
+        self.toolbar.setMovable(False)  # 禁止移动工具栏
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                spacing: 5px;
+                padding: 5px;
+                background-color: #f8f9fa;
+                border-bottom: 1px solid #dee2e6;
+            }
+        """)
+        
+        # 设置长截图按钮
+        self.setup_long_screenshot_button()
         
         # 初始化文件路径列表
         self.file_paths = []
@@ -256,7 +272,37 @@ class MainWindow(QMainWindow):
         
         # 添加一个标志来标识当前图片是否来自剪贴板
         self.is_from_clipboard = False
-    
+        
+        # 添加长截图窗口
+        self.long_screenshot_window = None
+        
+    def setup_long_screenshot_button(self):
+        """设置长截图按钮"""
+        long_screenshot_button = QPushButton("长截图", self)
+        long_screenshot_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        long_screenshot_button.clicked.connect(self.show_long_screenshot_window)
+        
+        # 将按钮添加到工具栏
+        self.toolbar.addWidget(long_screenshot_button)
+        
+    def show_long_screenshot_window(self):
+        """显示长截图窗口"""
+        if self.long_screenshot_window is None:
+            self.long_screenshot_window = TransparentWindow(self)
+        self.long_screenshot_window.show()
+
     def handle_dropped_files(self, file_paths: list):
         """处理拖拽的文件"""
         try:
