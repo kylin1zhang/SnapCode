@@ -21,6 +21,7 @@ from pathlib import Path
 import tempfile
 import os
 from .long_screenshot_window import TransparentWindow
+import time
 
 class DropArea(QWidget):
     """自定义拖拽区域"""
@@ -493,30 +494,28 @@ class MainWindow(QMainWindow):
             # 从剪贴板获取图片
             image = QImage(clipboard.image())
             
-            # 让用户选择保存位置
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "保存粘贴的图片",
-                str(Path.home() / "Downloads" / "clipboard_image.png"),  # 默认保存到下载文件夹
-                "PNG图片 (*.png)"
-            )
-            
-            if file_path:
-                # 确保文件扩展名为.png
-                if not file_path.lower().endswith('.png'):
-                    file_path += '.png'
+            # 创建临时文件保存图片，不弹出保存对话框
+            try:
+                # 创建临时目录（如果不存在）
+                temp_dir = Path(tempfile.gettempdir()) / "snapcode"
+                temp_dir.mkdir(parents=True, exist_ok=True)
                 
-                # 保存图片
+                # 生成临时文件路径
+                file_path = str(temp_dir / f"clipboard_image_{int(time.time())}.png")
+                
+                # 保存图片到临时文件
                 if image.save(file_path, 'PNG'):
-                    self.statusBar().showMessage("已保存粘贴的图片")
+                    self.statusBar().showMessage("已处理剪贴板图片")
                     # 设置来源标志
                     self.is_from_clipboard = True
                     # 处理图片
                     self.handle_dropped_files([file_path])
                 else:
-                    self.statusBar().showMessage("保存粘贴的图片失败", 3000)
-            else:
-                self.statusBar().showMessage("已取消保存", 3000)
+                    self.statusBar().showMessage("处理剪贴板图片失败", 3000)
+            except Exception as e:
+                self.statusBar().showMessage(f"处理剪贴板图片出错: {str(e)}", 3000)
+                import traceback
+                traceback.print_exc()
         else:
             self.statusBar().showMessage("剪贴板中没有图片", 3000)
 

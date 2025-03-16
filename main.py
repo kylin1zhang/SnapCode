@@ -9,7 +9,6 @@ from PyQt6.QtCore import Qt
 # 添加项目根目录到 Python 路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
-
 from src.ui.main_window import MainWindow
 
 def main():

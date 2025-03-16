@@ -15,19 +15,23 @@ class LongScreenshotCapture:
         self.is_capturing = False
         self.window_handle = None
         self.select_rect = None
-        self.scroll_delay = 800  # 进一步增加滚动延迟（毫秒）
+        self.scroll_delay = 400  # 进一步减少滚动延迟（毫秒）
         self.max_scroll_count = 500  # 增加最大滚动次数到500，支持更长的页面
         self.current_scroll_count = 0
         self.result_image = None
         self.auto_scroll = True
         self.same_frame_count = 0  # 连续相同帧计数
-        self.max_same_frames = 12   # 进一步增加最大连续相同帧数，提高对空白区域的容忍度
+        self.max_same_frames = 3   # 减少最大连续相同帧数，加快判断结束
         self.is_remote_desktop = False  # 是否为远程桌面
         self.empty_frame_count = 0  # 连续空白帧计数
-        self.max_empty_frames = 8  # 增加最大连续空白帧数
+        self.max_empty_frames = 3  # 减少最大连续空白帧数，加快判断结束
         self.forced_scroll_count = 0  # 强制滚动计数
-        self.max_forced_scroll = 3  # 最大强制滚动次数
+        self.max_forced_scroll = 2  # 减少最大强制滚动次数
         self.last_scroll_time = 0  # 上次滚动时间
+        self.was_stopped_manually = False  # 是否被用户手动停止
+        self.start_time = 0  # 开始时间
+        self.timeout = 120  # 超时时间（秒）
+        self.active_timers = []  # 跟踪所有活动的QTimer
         
     def start_capture(self, window_handle, select_rect=None):
         """开始捕获长截图"""
@@ -39,6 +43,9 @@ class LongScreenshotCapture:
         self.current_scroll_count = 0
         self.same_frame_count = 0
         self.result_image = None
+        self.was_stopped_manually = False
+        self.start_time = time.time()  # 记录开始时间
+        self.active_timers = []  # 清空定时器列表
         
         # 检查是否为远程桌面窗口
         try:
@@ -52,7 +59,7 @@ class LongScreenshotCapture:
         # 确保窗口处于活动状态
         try:
             win32gui.SetForegroundWindow(window_handle)
-            time.sleep(1.0)  # 进一步增加等待时间，确保窗口完全激活
+            time.sleep(0.5)  # 减少等待时间
         except Exception as e:
             print(f"激活窗口失败: {str(e)}")
         
@@ -61,7 +68,11 @@ class LongScreenshotCapture:
         
         # 如果启用自动滚动，开始滚动过程
         if self.auto_scroll:
-            QTimer.singleShot(self.scroll_delay, self.scroll_and_capture)
+            timer = QTimer()
+            timer.timeout.connect(self.scroll_and_capture)
+            timer.setSingleShot(True)
+            timer.start(self.scroll_delay)
+            self.active_timers.append(timer)  # 跟踪定时器
         
     def capture_frame(self):
         """捕获当前帧，使用更高的清晰度设置"""
@@ -120,48 +131,111 @@ class LongScreenshotCapture:
     
     def scroll_and_capture(self):
         """滚动并捕获下一帧"""
+        # 立即检查是否应该停止
         if not self.is_capturing:
+            print("截图已被终止，停止滚动")
+            return
+        
+        # 检查是否超时
+        if time.time() - self.start_time > self.timeout:
+            print(f"截图超时（{self.timeout}秒），自动停止")
+            self.is_capturing = False
+            self.finish_capture()
             return
         
         # 检查是否达到最大滚动次数
         if self.current_scroll_count >= self.max_scroll_count:
             print(f"达到最大滚动次数 ({self.max_scroll_count})，完成截图")
+            self.is_capturing = False
             self.finish_capture()
             return
         
         # 执行滚动
         if self.perform_scroll():
-            # 等待页面渲染
-            wait_time = 0.5 if self.is_remote_desktop else 0.3  # 远程桌面等待更长时间
-            time.sleep(wait_time)
+            # 再次检查是否应该停止（滚动后）
+            if not self.is_capturing:
+                print("截图已被终止，停止捕获")
+                return
+            
+            # 等待页面渲染 - 减少等待时间
+            wait_time = 0.1 if self.is_remote_desktop else 0.05  # 进一步减少等待时间
+            
+            # 分段等待，每次检查是否应该停止
+            wait_start = time.time()
+            while time.time() - wait_start < wait_time:
+                if not self.is_capturing:
+                    print("等待渲染过程中检测到终止请求，停止捕获")
+                    return
+                time.sleep(0.01)  # 每10毫秒检查一次
+            
+            # 再次检查是否应该停止（等待后）
+            if not self.is_capturing:
+                print("截图已被终止，停止捕获")
+                return
             
             # 捕获当前帧
             if self.capture_frame():
                 # 检查是否到达底部
                 if self.check_end_of_scroll():
                     print("检测到已到达底部，完成截图")
+                    self.is_capturing = False
                     self.finish_capture()
+                    return
+                
+                # 再次检查是否应该停止（捕获后）
+                if not self.is_capturing:
+                    print("截图已被终止，停止继续滚动")
                     return
                 
                 # 继续滚动和捕获
                 self.current_scroll_count += 1
-                QTimer.singleShot(self.scroll_delay, self.scroll_and_capture)
+                
+                # 使用更短的延迟
+                next_delay = self.scroll_delay
+                # 如果已经滚动了很多次，可以加快速度
+                if self.current_scroll_count > 10:
+                    next_delay = max(200, self.scroll_delay - 200)  # 最小200毫秒
+                    
+                # 使用QTimer而不是QTimer.singleShot，这样可以跟踪和停止它
+                timer = QTimer()
+                timer.timeout.connect(self.scroll_and_capture)
+                timer.setSingleShot(True)
+                timer.start(next_delay)
+                self.active_timers.append(timer)  # 跟踪定时器
             else:
                 print("捕获帧失败，完成截图")
+                self.is_capturing = False
                 self.finish_capture()
         else:
             print("滚动失败，完成截图")
+            self.is_capturing = False
             self.finish_capture()
     
     def perform_scroll(self):
         """执行滚动操作，增强滚动可靠性"""
         try:
+            # 检查是否应该停止
+            if not self.is_capturing:
+                print("滚动前检测到终止请求，停止滚动")
+                return False
+            
             # 确保窗口处于活动状态
             try:
                 win32gui.SetForegroundWindow(self.window_handle)
-                time.sleep(0.2)  # 增加等待时间
+                # 分段等待，每次检查是否应该停止
+                wait_start = time.time()
+                while time.time() - wait_start < 0.05:  # 进一步减少等待时间到0.05秒
+                    if not self.is_capturing:
+                        print("激活窗口过程中检测到终止请求，停止滚动")
+                        return False
+                    time.sleep(0.01)  # 每10毫秒检查一次
             except Exception as e:
                 print(f"设置前台窗口失败: {str(e)}，尝试继续滚动")
+            
+            # 检查是否应该停止
+            if not self.is_capturing:
+                print("激活窗口后检测到终止请求，停止滚动")
+                return False
             
             # 获取窗口中心点或选区中心点
             if self.select_rect:
@@ -177,42 +251,75 @@ class LongScreenshotCapture:
             
             # 移动鼠标到中心点
             QCursor.setPos(center_x, center_y)
-            time.sleep(0.2)  # 增加等待时间
+            
+            # 分段等待，每次检查是否应该停止
+            wait_start = time.time()
+            while time.time() - wait_start < 0.05:  # 进一步减少等待时间到0.05秒
+                if not self.is_capturing:
+                    print("移动鼠标过程中检测到终止请求，停止滚动")
+                    # 恢复鼠标位置
+                    QCursor.setPos(original_pos)
+                    return False
+                time.sleep(0.01)  # 每10毫秒检查一次
+            
+            # 检查是否应该停止
+            if not self.is_capturing:
+                print("移动鼠标后检测到终止请求，停止滚动")
+                # 恢复鼠标位置
+                QCursor.setPos(original_pos)
+                return False
             
             # 模拟滚动 - 根据是否为远程桌面调整滚动力度
             if self.is_remote_desktop:
                 # 远程桌面使用更强的滚动
-                scroll_count = 5  # 更多滚动次数
+                scroll_count = 2  # 进一步减少滚动次数
                 scroll_value = -240  # 更大滚动值
-                scroll_interval = 0.15  # 更长滚动间隔
+                scroll_interval = 0.03  # 进一步减少滚动间隔
             else:
                 # 普通窗口使用标准滚动
-                scroll_count = 3
+                scroll_count = 1  # 进一步减少滚动次数
                 scroll_value = -120
-                scroll_interval = 0.1
+                scroll_interval = 0.02  # 进一步减少滚动间隔
             
             # 如果已经滚动了很多次但内容没有明显变化，增加滚动力度
             if self.current_scroll_count > 15 and self.same_frame_count > 1:
                 print("检测到可能的滚动困难，增加滚动力度")
-                scroll_count += 2
+                scroll_count += 1
                 scroll_value *= 1.5
             
             # 如果是强制滚动，使用更大的滚动值
             if self.forced_scroll_count > 0:
-                scroll_count += 2
+                scroll_count += 1
                 scroll_value *= 2
                 print(f"执行强制滚动 ({self.forced_scroll_count}/{self.max_forced_scroll})，增加滚动力度")
                 
             # 执行滚动
             success = False
-            for _ in range(scroll_count):
+            for i in range(scroll_count):
+                # 检查是否应该停止
+                if not self.is_capturing:
+                    print(f"滚动过程中检测到终止请求 (第{i+1}/{scroll_count}次)，停止滚动")
+                    # 恢复鼠标位置
+                    QCursor.setPos(original_pos)
+                    return False
+                
                 win32api.mouse_event(
                     win32con.MOUSEEVENTF_WHEEL,
                     0, 0,
                     int(scroll_value),
                     0
                 )
-                time.sleep(scroll_interval)
+                
+                # 分段等待，每次检查是否应该停止
+                wait_start = time.time()
+                while time.time() - wait_start < scroll_interval:
+                    if not self.is_capturing:
+                        print(f"滚动间隔中检测到终止请求 (第{i+1}/{scroll_count}次)，停止滚动")
+                        # 恢复鼠标位置
+                        QCursor.setPos(original_pos)
+                        return False
+                    time.sleep(0.01)  # 每10毫秒检查一次
+                
                 success = True
             
             # 恢复鼠标位置
@@ -220,11 +327,17 @@ class LongScreenshotCapture:
             
             # 如果滚动次数较多，增加额外的等待时间让页面完全加载
             if self.current_scroll_count > 20:
-                time.sleep(0.3)
+                # 分段等待，每次检查是否应该停止
+                wait_start = time.time()
+                while time.time() - wait_start < 0.05:  # 进一步减少等待时间到0.05秒
+                    if not self.is_capturing:
+                        print("额外等待过程中检测到终止请求，停止滚动")
+                        return False
+                    time.sleep(0.01)  # 每10毫秒检查一次
                 
             # 记录滚动时间
             self.last_scroll_time = time.time()
-                
+            
             return success
         except Exception as e:
             print(f"滚动错误: {str(e)}")
@@ -253,39 +366,38 @@ class LongScreenshotCapture:
             if is_empty_frame:
                 self.empty_frame_count += 1
                 print(f"检测到空白帧 ({self.empty_frame_count}/{self.max_empty_frames})")
-                # 如果连续空白帧数量未达到阈值，不认为已到达底部
-                if self.empty_frame_count < self.max_empty_frames:
-                    self.same_frame_count = 0  # 重置相似帧计数
-                    return False
+                # 如果连续空白帧数量达到阈值，认为已到达底部
+                if self.empty_frame_count >= self.max_empty_frames:
+                    return True
             else:
                 self.empty_frame_count = 0  # 重置空白帧计数
             
             # 远程桌面使用更低的相似度阈值
-            threshold = 0.90 if self.is_remote_desktop else 0.95
+            threshold = 0.85 if self.is_remote_desktop else 0.90  # 降低相似度阈值，更容易判断结束
             
             # 如果相似度超过阈值，可能已到达底部
             if similarity > threshold:
                 self.same_frame_count += 1
                 print(f"检测到相似帧 ({self.same_frame_count}/{self.max_same_frames})")
                 
-                # 如果连续相似帧达到阈值，但滚动次数较少，尝试强制滚动
+                # 如果连续相似帧达到阈值，认为已到达底部
                 if self.same_frame_count >= self.max_same_frames:
                     # 额外检查：确保不是因为滚动失败而误判为到达底部
                     # 如果当前滚动次数太少，可能是滚动失败而不是真的到底了
-                    if self.current_scroll_count < 15:
+                    if self.current_scroll_count < 10:  # 减少滚动次数阈值
                         # 尝试额外滚动几次
                         print("滚动次数较少，尝试额外滚动以确认是否真的到底")
                         self.forced_scroll_count += 1
                         if self.forced_scroll_count <= self.max_forced_scroll:
                             # 执行更强力的滚动
-                            for _ in range(5):
+                            for _ in range(3):  # 减少强制滚动次数
                                 win32api.mouse_event(
                                     win32con.MOUSEEVENTF_WHEEL,
                                     0, 0,
                                     -300,  # 更大的滚动值
                                     0
                                 )
-                                time.sleep(0.2)
+                                time.sleep(0.1)  # 减少等待时间
                             return False
                     return True
             else:
@@ -293,31 +405,31 @@ class LongScreenshotCapture:
                 self.forced_scroll_count = 0  # 重置强制滚动计数
             
             # 额外检查：如果已经滚动了很多次但内容变化很小，可能是卡住了
-            if self.current_scroll_count > 20:
+            if self.current_scroll_count > 15:  # 减少滚动次数阈值
                 # 计算最后几帧的平均相似度
-                if len(self.screenshots) >= 5:
+                if len(self.screenshots) >= 3:  # 减少比较帧数
                     recent_similarities = []
-                    for i in range(len(self.screenshots)-1, max(0, len(self.screenshots)-5), -1):
+                    for i in range(len(self.screenshots)-1, max(0, len(self.screenshots)-3), -1):
                         if i > 0:
                             sim = self.calculate_image_similarity(self.screenshots[i], self.screenshots[i-1])
                             recent_similarities.append(sim)
                     
-                    if recent_similarities and sum(recent_similarities)/len(recent_similarities) > 0.98:
+                    if recent_similarities and sum(recent_similarities)/len(recent_similarities) > 0.95:  # 降低相似度阈值
                         print("最近几帧相似度很高，可能滚动卡住，尝试强制滚动")
                         # 执行更强力的滚动
-                        for _ in range(5):
+                        for _ in range(3):  # 减少强制滚动次数
                             win32api.mouse_event(
                                 win32con.MOUSEEVENTF_WHEEL,
                                 0, 0,
                                 -300,  # 更大的滚动值
                                 0
                             )
-                            time.sleep(0.2)
+                            time.sleep(0.1)  # 减少等待时间
             
             # 检查滚动间隔，防止滚动过快
             current_time = time.time()
-            if current_time - self.last_scroll_time < 0.5:  # 确保至少0.5秒的滚动间隔
-                time.sleep(0.5 - (current_time - self.last_scroll_time))
+            if current_time - self.last_scroll_time < 0.3:  # 减少滚动间隔
+                time.sleep(0.3 - (current_time - self.last_scroll_time))
             self.last_scroll_time = time.time()
             
             return False
@@ -381,9 +493,33 @@ class LongScreenshotCapture:
             print(f"检查空白帧错误: {str(e)}")
             return False
     
+    def stop_capture(self):
+        """立即停止截图过程"""
+        print("用户手动停止截图")
+        self.was_stopped_manually = True
+        self.is_capturing = False
+        
+        # 停止所有活动的定时器
+        for timer in self.active_timers:
+            if timer.isActive():
+                timer.stop()
+                print(f"停止定时器: {timer}")
+        
+        # 清空定时器列表
+        self.active_timers = []
+        
+        # 如果已经有截图，则处理已有的截图
+        if len(self.screenshots) > 0:
+            return self.finish_capture()
+        return None
+    
     def finish_capture(self):
         """完成捕获并拼接图像"""
-        print(f"完成捕获，共 {len(self.screenshots)} 帧")
+        if self.was_stopped_manually:
+            print(f"用户终止截图，处理已捕获的 {len(self.screenshots)} 帧")
+        else:
+            print(f"完成捕获，共 {len(self.screenshots)} 帧")
+        
         self.is_capturing = False
         
         if not self.screenshots:
@@ -538,3 +674,23 @@ class LongScreenshotCapture:
             # 远程桌面使用更小的默认重叠
             default_overlap = 30 if self.is_remote_desktop else 50
             return h - default_overlap 
+
+    def force_stop(self):
+        """强制停止所有截图操作"""
+        print("强制停止长截图捕获")
+        self.is_capturing = False
+        self.was_stopped_manually = True
+        
+        # 停止所有活动的定时器
+        for timer in self.active_timers:
+            if timer.isActive():
+                timer.stop()
+                print(f"停止定时器: {timer}")
+        
+        # 清空定时器列表
+        self.active_timers = []
+        
+        # 如果已经有截图，则处理已有的截图
+        if len(self.screenshots) > 0:
+            return self.finish_capture()
+        return None 
