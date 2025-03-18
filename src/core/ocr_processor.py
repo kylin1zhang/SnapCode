@@ -1,14 +1,22 @@
+import os
+import sys
 import pytesseract
 from PIL import Image
 import re
+import logging
 from typing import List, Optional, Dict, Tuple
 from pathlib import Path
-import logging
+import time
+from datetime import datetime
 
 class OCRProcessor:
-    """OCR处理类"""
+    """OCR处理类 - 支持Tesseract OCR和Windows OCR"""
     
     def __init__(self):
+        # 设置日志
+        self._setup_logging()
+        self.logger.info("初始化OCR处理器")
+        
         # 语言特征定义
         self.language_features = {
             'python': {
@@ -31,7 +39,7 @@ class OCRProcessor:
                     r'private\s+(?:static\s+)?(?:void|string|int|bool)\s+\w+\s*\('
                 ],
                 'file_ext': '.cs',
-                'weight': 1.2  # 给C#特征更高的权重
+                'weight': 1.2
             },
             'java': {
                 'keywords': ['public', 'private', 'class', 'void', 'String', 'int', 'package'],
@@ -61,23 +69,180 @@ class OCRProcessor:
                     r'DECLARE\s+@\w+',
                 ],
                 'file_ext': '.sql',
-                'weight': 1.5  # 给SQL更高的权重，因为其关键词比较独特
+                'weight': 1.5
             }
         }
         
         # OCR配置
         self.config = r'--oem 3 --psm 6'
         
-        # 初始化日志
-        self._setup_logging()
+        # 设置Tesseract
+        self._setup_tesseract()
+        
+        # 尝试加载Windows OCR支持
+        self.windows_ocr_available = False
+        try:
+            from src.core.windows_ocr import OCR
+            self.windows_ocr = OCR()
+            self.windows_ocr_available = self.windows_ocr.is_windows_ocr_available()
+            if self.windows_ocr_available:
+                self.logger.info("Windows OCR可用")
+        except ImportError:
+            self.logger.info("Windows OCR不可用")
     
     def _setup_logging(self):
         """设置日志"""
+        # 创建logs目录
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        
+        # 设置日志
+        log_file = log_dir / "ocr_processor.log"
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s'
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file, encoding="utf-8"),
+                logging.StreamHandler()
+            ]
         )
         self.logger = logging.getLogger(__name__)
+    
+    def _setup_tesseract(self):
+        """设置Tesseract"""
+        # 获取应用基础路径
+        if getattr(sys, 'frozen', False):
+            base_dir = sys._MEIPASS
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        self.logger.info(f"应用基础路径: {base_dir}")
+        
+        # 设置tessdata路径 - 尝试多种位置
+        tessdata_paths = [
+            os.path.join(base_dir, 'tessdata'),
+            os.path.join(base_dir, '_internal', 'tessdata'),
+        ]
+        
+        self.tessdata_path = None
+        for path in tessdata_paths:
+            if os.path.exists(path) and os.path.isdir(path):
+                # 检查是否包含语言文件
+                eng_file = os.path.join(path, 'eng.traineddata')
+                if os.path.exists(eng_file):
+                    self.tessdata_path = path
+                    break
+        
+        if self.tessdata_path:
+            self.logger.info(f"找到tessdata路径: {self.tessdata_path}")
+            os.environ['TESSDATA_PREFIX'] = self.tessdata_path
+            
+            # 列出可用的语言
+            lang_files = []
+            for file in os.listdir(self.tessdata_path):
+                if file.endswith('.traineddata'):
+                    lang_files.append(file.split('.')[0])
+            self.logger.info(f"可用语言: {', '.join(lang_files)}")
+        else:
+            self.logger.warning("未找到有效的tessdata路径")
+        
+        # 设置Tesseract可执行文件路径
+        tesseract_paths = [
+            os.path.join(base_dir, 'tesseract.exe'),
+            os.path.join(base_dir, '_internal', 'tesseract.exe'),
+        ]
+        
+        self.tesseract_path = None
+        for path in tesseract_paths:
+            if os.path.exists(path):
+                self.tesseract_path = path
+                break
+        
+        if self.tesseract_path:
+            self.logger.info(f"找到Tesseract可执行文件: {self.tesseract_path}")
+            pytesseract.pytesseract.tesseract_cmd = self.tesseract_path
+        else:
+            self.logger.warning("未找到有效的Tesseract路径")
+        
+        # 检查Tesseract是否可用
+        self.tesseract_available = self.check_tesseract()
+    
+    def check_tesseract(self):
+        """检查Tesseract OCR是否可用"""
+        try:
+            # 尝试获取Tesseract版本
+            version = pytesseract.get_tesseract_version()
+            self.logger.info(f"检测到Tesseract版本: {version}")
+            return True
+        except Exception as e:
+            self.logger.error(f"检测Tesseract时出错: {e}")
+            return False
+    
+    def process_image(self, image_path):
+        """
+        处理图像，包括OCR识别和语言检测
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            包含处理结果的字典
+        """
+        start_time = time.time()
+        self.logger.info(f"开始处理图像: {image_path}")
+        
+        # 首先尝试Tesseract OCR
+        if self.tesseract_available:
+            try:
+                # 提取文本
+                success, text = self.extract_text(image_path)
+                
+                if success:
+                    # 检测语言
+                    code_info = self.detect_language(text)
+                    
+                    return {
+                        'success': True,
+                        'text': text,
+                        'language': code_info['language'],
+                        'class_name': code_info['class_name'],
+                        'file_ext': code_info['file_ext'],
+                        'confidence': code_info['confidence'],
+                        'time_taken': time.time() - start_time,
+                        'engine': 'Tesseract OCR'
+                    }
+            except Exception as e:
+                self.logger.error(f"Tesseract处理失败: {e}")
+        
+        # 如果Tesseract失败或不可用，尝试Windows OCR
+        if self.windows_ocr_available:
+            try:
+                self.logger.info("尝试使用Windows OCR")
+                text = self.windows_ocr.recognize_text(image_path)
+                
+                if text and not text.startswith("Windows OCR不可用"):
+                    # 检测语言
+                    code_info = self.detect_language(text)
+                    
+                    return {
+                        'success': True,
+                        'text': text,
+                        'language': code_info['language'],
+                        'class_name': code_info['class_name'],
+                        'file_ext': code_info['file_ext'],
+                        'confidence': code_info['confidence'],
+                        'time_taken': time.time() - start_time,
+                        'engine': 'Windows OCR'
+                    }
+            except Exception as e:
+                self.logger.error(f"Windows OCR处理失败: {e}")
+        
+        # 所有OCR方法都失败
+        return {
+            'success': False,
+            'error': 'OCR处理失败，请确保Tesseract OCR已正确安装或Windows OCR可用',
+            'time_taken': time.time() - start_time
+        }
     
     def detect_language(self, code: str) -> Dict[str, any]:
         """检测代码语言和提取类名"""
@@ -125,16 +290,26 @@ class OCRProcessor:
             # 图片预处理
             image = self._preprocess_image(image)
             
-            # OCR识别
-            text = pytesseract.image_to_string(
-                image,
-                config=self.config
-            )
+            # 尝试使用中英文混合识别
+            try:
+                text = pytesseract.image_to_string(
+                    image,
+                    lang='chi_sim+eng',  # 同时使用简体中文和英文
+                    config=self.config
+                )
+            except Exception as e:
+                self.logger.warning(f"中英文混合识别失败，尝试仅英文: {e}")
+                # 回退到仅英文
+                text = pytesseract.image_to_string(
+                    image,
+                    lang='eng',  # 仅使用英文
+                    config=self.config
+                )
             
             # 后处理
             text = self._postprocess_text(text)
             
-            self.logger.info(f"Successfully processed {image_path}")
+            self.logger.info(f"成功处理图像: {image_path}")
             return True, text
             
         except Exception as e:
@@ -153,22 +328,23 @@ class OCRProcessor:
                 progress = int((i / total) * 100)
                 progress_callback(progress)
             
-            success, text = self.extract_text(path)
-            if success:
-                # 检测代码语言和类名
-                code_info = self.detect_language(text)
+            # 处理图片
+            result = self.process_image(path)
+            
+            if result['success']:
                 results.append({
                     'path': path,
-                    'text': text,
-                    'language': code_info['language'],
-                    'class_name': code_info['class_name'],
-                    'file_ext': code_info['file_ext'],
-                    'success': True
+                    'text': result['text'],
+                    'language': result['language'],
+                    'class_name': result.get('class_name'),
+                    'file_ext': result['file_ext'],
+                    'success': True,
+                    'engine': result.get('engine', 'Unknown')
                 })
             else:
                 results.append({
                     'path': path,
-                    'error': text,
+                    'error': result.get('error', '未知错误'),
                     'success': False
                 })
                 

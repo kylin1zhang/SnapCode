@@ -1,6 +1,78 @@
-# SnapCode - Code Image Recognition Tool
+# SnapCode - 代码图片识别工具
 
-SnapCode is an intelligent code image recognition tool that quickly converts code screenshots into editable text code. Whether it's code from online tutorials, video courses, or technical documentation, SnapCode makes it easy to convert code images into usable text.
+SnapCode是一款代码图片识别工具，可以将代码截图转换为可编辑的文本，支持多种编程语言。
+
+## 安装说明
+
+SnapCode提供两种使用方式：
+
+1. **便携版本** - 无需安装，包含所有依赖
+2. **安装版本** - 通过安装包安装，方便系统集成
+
+## 解决常见问题
+
+### 图标缺失问题
+
+如果程序运行时没有显示图标，可能是由于以下原因：
+
+1. 资源文件未正确包含在打包中
+2. 资源文件路径不正确
+
+**解决方法**：
+
+1. 确保`resources`目录存在且包含`icon.ico`和`icon.png`文件
+2. 使用提供的`convert_icon.py`脚本生成图标:
+   ```
+   python convert_icon.py
+   ```
+3. 使用`build_portable.py`重新构建应用程序，它会自动处理图标问题
+
+### Tesseract OCR不可用问题
+
+如果OCR功能不可用，可能是由于以下原因：
+
+1. Tesseract OCR未正确安装或打包
+2. 程序无法找到Tesseract路径
+
+**解决方法**：
+
+1. 使用便携版本：便携版本已经内置了Tesseract，无需额外安装
+2. 使用安装版本：需要单独安装Tesseract OCR，步骤如下：
+   - 下载并安装[Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
+   - 确保安装English语言包
+   - 将Tesseract安装路径添加到环境变量
+3. 手动指定Tesseract路径：在应用设置中指定Tesseract可执行文件路径
+
+## 构建便携版本
+
+便携版SnapCode包含所有依赖，包括Tesseract OCR，无需额外安装。构建步骤：
+
+1. 确保已安装Python 3.8或更高版本
+2. 安装所需依赖：`pip install -r requirements.txt`
+3. 运行构建脚本：`python build_portable.py`
+4. 在`dist`目录下找到`SnapCode.exe`和`SnapCode_便携版.zip`
+
+## 项目结构
+
+- `src/` - 源代码目录
+  - `core/` - 核心功能模块 
+  - `ui/` - 用户界面相关代码
+  - `utils/` - 工具函数
+- `resources/` - 资源文件
+- `convert_icon.py` - 图标转换工具
+- `build_portable.py` - 便携版构建工具
+- `onefile_build.spec` - PyInstaller打包配置
+
+## 技术说明
+
+- 使用PyQt6构建UI
+- 使用Tesseract OCR进行文字识别
+- 支持Windows原生OCR和Tesseract OCR双引擎
+- 自动检测代码语言并格式化
+
+## 许可证
+
+MIT License
 
 [中文文档](README-CN.md)
 
