@@ -3,11 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
-dist/
-!dist/SnapCode.exe
-*.egg-info/
-*.egg
 
 # PyInstaller
 *.manifest
